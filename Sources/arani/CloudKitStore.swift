@@ -45,8 +45,53 @@ public class CloudKitStore: CloudKitMessagingStore {
     }
 
     public func fetchConversations() async throws -> [ConversationRecord] {
-        // TODO: implement fetching conversations
-        return []
+        let query = CKQuery(
+            recordType: "Conversation",
+            predicate: NSPredicate(value: true)
+        )
+
+        let (privateMatchesArray, _) = try await database.records(
+            matching: query
+        )
+        let (sharedMatchesArray, _) = try await container.sharedCloudDatabase
+            .records(matching: query)
+
+        let privateMatches = Dictionary(
+            uniqueKeysWithValues: privateMatchesArray
+        )
+        let sharedMatches = Dictionary(uniqueKeysWithValues: sharedMatchesArray)
+
+        // Merge, preferring private on key collisions
+        let allMatches = privateMatches.merging(sharedMatches) {
+            privateResult,
+            _ in privateResult
+        }
+
+        var conversations: [ConversationRecord] = []
+        let decoder = JSONDecoder()
+
+        for (_, result) in allMatches {
+            let ckRecord = try result.get()
+            guard let jsonData = ckRecord["threadKeyBlobs"] as? Data else {
+                continue
+            }
+            let base64Map = try decoder.decode(
+                [String: String].self,
+                from: jsonData
+            )
+            let threadKeyBlobs = base64Map.compactMapValues {
+                Data(base64Encoded: $0)
+            }
+
+            conversations.append(
+                ConversationRecord(
+                    id: ckRecord.recordID,
+                    encryptedThreadKeys: threadKeyBlobs
+                )
+            )
+        }
+
+        return conversations
     }
 
     public func subscribe(
