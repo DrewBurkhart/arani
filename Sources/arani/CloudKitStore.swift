@@ -1,5 +1,5 @@
-import Foundation
 import CloudKit
+import Foundation
 
 public struct ConversationRecord: Identifiable {
     public let id: CKRecord.ID
@@ -21,7 +21,10 @@ public protocol CloudKitMessagingStore {
     func createConversation(participants: [String], threadKeyBlobs: [String: Data]) async throws -> ConversationRecord
     func fetchConversations() async throws -> [ConversationRecord]
     func subscribe(to conversation: ConversationRecord, handler: @escaping (MessageRecord) -> Void) -> CKQuerySubscription
-    func appendMessage(_ message: MessageRecord, to conversation: ConversationRecord) async throws
+    func appendMessage(
+        _ message: MessageRecord,
+        to conversation: ConversationRecord
+    ) async throws
 }
 
 public class CloudKitStore: CloudKitMessagingStore {
@@ -46,9 +49,32 @@ public class CloudKitStore: CloudKitMessagingStore {
     public func subscribe(to conversation: ConversationRecord, handler: @escaping (MessageRecord) -> Void) -> CKQuerySubscription {
         // TODO: subscription setup
         return CKQuerySubscription()
-    }
+    public func appendMessage(
+        _ message: MessageRecord,
+        to conversation: ConversationRecord
+    ) async throws {
+        let recordID = CKRecord.ID(
+            recordName: message.id.recordName,
+            zoneID: conversation.id.zoneID
+        )
+        let ckRecord = CKRecord(recordType: "Message", recordID: recordID)
 
-    public func appendMessage(_ message: MessageRecord, to conversation: ConversationRecord) async throws {
-        // TODO: implement saving message record
+        ckRecord["parent"] = message.parent
+        ckRecord["ciphertext"] = message.ciphertext as NSData
+        ckRecord["nonce"] = message.nonce as NSData
+        ckRecord["tag"] = message.tag as NSData
+        ckRecord["senderID"] = message.senderID as NSString
+        ckRecord["timestamp"] = message.timestamp as NSDate
+        if let signature = message.signature {
+            ckRecord["signature"] = signature as NSData
+        }
+
+        _ = try await database.modifyRecords(
+            saving: [ckRecord],
+            deleting: []
+        )
+    }
+}
+
     }
 }
