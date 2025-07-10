@@ -18,7 +18,10 @@ public struct MessageRecord: Identifiable {
 }
 
 public protocol CloudKitMessagingStore {
-    func createConversation(participants: [String], threadKeyBlobs: [String: Data]) async throws -> ConversationRecord
+    func createConversation(
+        participants: [String],
+        threadKeyBlobs: [String: Data]
+    ) async throws -> ConversationRecord
     func fetchConversations() async throws -> [ConversationRecord]
     func subscribe(
         to conversation: ConversationRecord,
@@ -39,9 +42,60 @@ public class CloudKitStore: CloudKitMessagingStore {
         self.database = container.privateCloudDatabase
     }
 
-    public func createConversation(participants: [String], threadKeyBlobs: [String : Data]) async throws -> ConversationRecord {
-        // TODO: implement creating and sharing Conversation record
-        throw NSError(domain: "NotImplemented", code: 0)
+    public func createConversation(
+        participants: [String],
+        threadKeyBlobs: [String: Data]
+    ) async throws -> ConversationRecord {
+        let convoRecord = CKRecord(recordType: "Conversation")
+
+        let encoder = JSONEncoder()
+        let dictForJSON = threadKeyBlobs.mapValues { $0.base64EncodedString() }
+        let jsonData = try encoder.encode(dictForJSON)
+        convoRecord["threadKeyBlobs"] = jsonData
+
+        let share = CKShare(rootRecord: convoRecord)
+        share[CKShare.SystemFieldKey.title] = "Arani Chat"
+        share.publicPermission = .none
+
+        for userRecordName in participants {
+            let recordID = CKRecord.ID(recordName: userRecordName)
+
+            let participant = try await container.shareParticipant(
+                forUserRecordID: recordID
+            )
+            participant.permission = .readWrite
+
+            share.addParticipant(participant)
+        }
+
+        let (resultsByID, _) = try await database.modifyRecords(
+            saving: [convoRecord, share],
+            deleting: []
+        )
+
+        let savedCKRecords: [CKRecord] = try resultsByID.values.map { result in
+            try result.get()
+        }
+
+        guard
+            let rec = savedCKRecords.first(where: {
+                $0.recordType == "Conversation"
+            })
+        else {
+            throw NSError(
+                domain: "CloudKitStore",
+                code: 0,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Missing Conversation record in save"
+                ]
+            )
+        }
+
+        return ConversationRecord(
+            id: rec.recordID,
+            encryptedThreadKeys: threadKeyBlobs
+        )
     }
 
     public func fetchConversations() async throws -> [ConversationRecord] {
@@ -152,8 +206,5 @@ public class CloudKitStore: CloudKitMessagingStore {
             saving: [ckRecord],
             deleting: []
         )
-    }
-}
-
     }
 }
