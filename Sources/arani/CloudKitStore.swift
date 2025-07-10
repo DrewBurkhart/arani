@@ -20,7 +20,10 @@ public struct MessageRecord: Identifiable {
 public protocol CloudKitMessagingStore {
     func createConversation(participants: [String], threadKeyBlobs: [String: Data]) async throws -> ConversationRecord
     func fetchConversations() async throws -> [ConversationRecord]
-    func subscribe(to conversation: ConversationRecord, handler: @escaping (MessageRecord) -> Void) -> CKQuerySubscription
+    func subscribe(
+        to conversation: ConversationRecord,
+        handler: @escaping (MessageRecord) -> Void
+    ) -> CKQuerySubscription
     func appendMessage(
         _ message: MessageRecord,
         to conversation: ConversationRecord
@@ -46,9 +49,40 @@ public class CloudKitStore: CloudKitMessagingStore {
         return []
     }
 
-    public func subscribe(to conversation: ConversationRecord, handler: @escaping (MessageRecord) -> Void) -> CKQuerySubscription {
-        // TODO: subscription setup
-        return CKQuerySubscription()
+    public func subscribe(
+        to conversation: ConversationRecord,
+        handler: @escaping (MessageRecord) -> Void
+    ) -> CKQuerySubscription {
+        // Predicate that only matches messages in this conversation
+        let predicate = NSPredicate(
+            format: "parent == %@",
+            CKRecord.Reference(recordID: conversation.id, action: .none)
+        )
+
+        let subscriptionID = "messages-\(conversation.id.recordName)"
+        let subscription = CKQuerySubscription(
+            recordType: "Message",
+            predicate: predicate,
+            subscriptionID: subscriptionID,
+            options: .firesOnRecordCreation
+        )
+
+        // Tell CloudKit to send silent pushes for new records
+        let info = CKSubscription.NotificationInfo()
+        info.shouldSendContentAvailable = true
+        subscription.notificationInfo = info
+
+        Task.detached(priority: .background) { [db = database, subscription] in
+            do {
+                _ = try await db.save(subscription)
+            } catch {
+                print("Failed to save subscription:", error)
+            }
+        }
+
+        return subscription
+    }
+
     public func appendMessage(
         _ message: MessageRecord,
         to conversation: ConversationRecord
