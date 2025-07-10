@@ -1,2 +1,2 @@
-// The Swift Programming Language
-// https://docs.swift.org/swift-book
+/// Top-level entry point for the chat framework
+public typealias AraniClient = ChatClient
