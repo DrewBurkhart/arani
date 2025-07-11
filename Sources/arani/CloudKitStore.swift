@@ -33,6 +33,8 @@ public protocol CloudKitMessagingStore {
         _ message: MessageRecord,
         to conversation: ConversationRecord
     ) async throws
+    func fetchMessages(in conversation: ConversationRecord) async throws
+        -> [CKRecord]
 }
 
 @MainActor
@@ -215,5 +217,17 @@ public class CloudKitStore: CloudKitMessagingStore {
             saving: [ckRecord],
             deleting: []
         )
+    }
+
+    public func fetchMessages(in conversation: ConversationRecord) async throws
+        -> [CKRecord]
+    {
+        let predicate = NSPredicate(
+            format: "parent == %@",
+            CKRecord.Reference(recordID: conversation.id, action: .none)
+        )
+        let query = CKQuery(recordType: "Message", predicate: predicate)
+        let (matches, _) = try await database.records(matching: query)
+        return try matches.values.map { try $0.get() }
     }
 }
