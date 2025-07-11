@@ -58,7 +58,7 @@ public class CloudKitStore: CloudKitMessagingStore {
         let jsonData = try encoder.encode(dictForJSON)
         convoRecord["threadKeyBlobs"] = jsonData
 
-        let (priv, pubData) = try KeyManager.shared.identityKeyPair()
+        let (_, pubData) = try KeyManager.shared.identityKeyPair()
         convoRecord["initiatorPublicKey"] = pubData as NSData
 
         let share = CKShare(rootRecord: convoRecord)

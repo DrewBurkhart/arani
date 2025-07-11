@@ -23,10 +23,7 @@ public class KeyManager {
         privateKey: Curve25519.KeyAgreement.PrivateKey,
         publicKey: Data
     ) {
-        let tagData = Data(keyTag.utf8)
-
-        // Fetch existing private key data
-        var query: [CFString: Any] = [
+        let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrAccount: keyTag,
             kSecReturnData: true,
@@ -49,7 +46,7 @@ public class KeyManager {
             let privateKey = Curve25519.KeyAgreement.PrivateKey()
             let raw = privateKey.rawRepresentation
 
-            var addQuery: [CFString: Any] = [
+            let addQuery: [CFString: Any] = [
                 kSecClass: kSecClassGenericPassword,
                 kSecAttrAccount: keyTag,
                 kSecValueData: raw,
@@ -69,7 +66,7 @@ public class KeyManager {
 
     /// Publishes the current user’s public key into the public database
     public func publishPublicKey() async throws {
-        let (privateKey, publicKeyData) = try identityKeyPair()
+        let (_, publicKeyData) = try identityKeyPair()
 
         let container = CKContainer.default()
         let meRecordID = try await container.userRecordID()
