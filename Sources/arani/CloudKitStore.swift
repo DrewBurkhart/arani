@@ -56,6 +56,9 @@ public class CloudKitStore: CloudKitMessagingStore {
         let jsonData = try encoder.encode(dictForJSON)
         convoRecord["threadKeyBlobs"] = jsonData
 
+        let (priv, pubData) = try KeyManager.shared.identityKeyPair()
+        convoRecord["initiatorPublicKey"] = pubData as NSData
+
         let share = CKShare(rootRecord: convoRecord)
         share[CKShare.SystemFieldKey.title] = "Arani Chat"
         share.publicPermission = .none
@@ -97,6 +100,7 @@ public class CloudKitStore: CloudKitMessagingStore {
 
         return ConversationRecord(
             id: rec.recordID,
+            initiatorPublicKey: rec["initiatorPublicKey"] as! Data,
             encryptedThreadKeys: threadKeyBlobs
         )
     }
@@ -139,10 +143,12 @@ public class CloudKitStore: CloudKitMessagingStore {
             let threadKeyBlobs = base64Map.compactMapValues {
                 Data(base64Encoded: $0)
             }
+            let initiator = ckRecord["initiatorPublicKey"] as! Data
 
             conversations.append(
                 ConversationRecord(
                     id: ckRecord.recordID,
+                    initiatorPublicKey: initiator,
                     encryptedThreadKeys: threadKeyBlobs
                 )
             )
