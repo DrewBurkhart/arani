@@ -66,9 +66,7 @@ public class KeyManager {
         // Something else went wrong
         throw KeychainError.unhandledError(status: status)
     }
-}
 
-extension KeyManager {
     /// Publishes the current user’s public key into the public database
     public func publishPublicKey() async throws {
         let (privateKey, publicKeyData) = try identityKeyPair()

@@ -30,6 +30,7 @@ public class ChatClient {
         self.container = container
     }
 
+    /// Creates a new ConversationRecord.
     public func startNewConversation(with users: [String]) async throws
         -> ConversationRecord
     {
@@ -57,6 +58,7 @@ public class ChatClient {
         )
     }
 
+    /// Appends a MessageRecord to the Conversation.
     public func send(
         _ plaintext: String,
         in conversation: ConversationRecord
@@ -110,10 +112,10 @@ public class ChatClient {
         try await store.appendMessage(message, to: conversation)
     }
 
-    /// Call this when you receive a new Message CKRecord (e.g. from a push).
+    /// Call this when you receive a new Message CKRecord.
     /// - Parameters:
     ///   - record:       The raw CKRecord of type "Message".
-    ///   - conversation: The conversation it belongs to (so we can get the thread key).
+    ///   - conversation: The conversation it belongs to (to get the thread key).
     ///   - handler:      Your UI callback with a decrypted message.
     func handleIncoming(
         _ record: CKRecord,
@@ -178,6 +180,7 @@ public class ChatClient {
         return AsyncStream { _ in }
 
     /// Decrypt one MessageRecord into DecryptedMessage
+    // TODO: This should probably move to a crypto module.
     private func decrypt(
         _ message: MessageRecord,
         in conversation: ConversationRecord
@@ -217,9 +220,7 @@ public class ChatClient {
 
         return DecryptedMessage(senderID: senderID, text: text, date: timestamp)
     }
-}
 
-extension ChatClient {
     /// Fetches the raw public-key bytes you previously published for `userRecordName`.
     func fetchPublicKey(for userRecordName: String) async throws -> Data {
         let profileRecordID = CKRecord.ID(recordName: userRecordName)
