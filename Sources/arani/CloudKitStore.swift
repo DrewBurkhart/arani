@@ -3,6 +3,7 @@ import Foundation
 
 public struct ConversationRecord: Identifiable {
     public let id: CKRecord.ID
+    public let initiatorPublicKey: Data
     public var encryptedThreadKeys: [String: Data]
 }
 
