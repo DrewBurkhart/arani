@@ -176,6 +176,46 @@ public class ChatClient {
     public func messagesPublisher(for conversation: ConversationRecord) -> AsyncStream<DecryptedMessage> {
         // TODO: subscribe and decrypt messages
         return AsyncStream { _ in }
+
+    /// Decrypt one MessageRecord into DecryptedMessage
+    private func decrypt(
+        _ message: MessageRecord,
+        in conversation: ConversationRecord
+    ) async throws -> DecryptedMessage {
+        let ciphertext = message.ciphertext
+        let nonce = try AES.GCM.Nonce(data: message.nonce)
+        let tag = message.tag
+        let senderID = message.senderID
+        let timestamp = message.timestamp
+
+        let myID = try await container.userRecordID().recordName
+        guard let blob = conversation.encryptedThreadKeys[myID] else {
+            throw NSError(
+                domain: "ChatClient",
+                code: 0,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "No thread key for current user"
+                ]
+            )
+        }
+        let (priv, _) = try keyManager.identityKeyPair()
+        let keyData = try AsymmetricCryptoKitAdapter()
+            .decryptThreadKey(
+                blob,
+                initiatorPublicKeyData: conversation.initiatorPublicKey,
+                myPrivateKey: priv
+            )
+        let threadKey = SymmetricKey(data: keyData)
+
+        let plain = try crypto.decrypt(
+            ciphertext,
+            nonce: nonce,
+            tag: tag,
+            using: threadKey
+        )
+        let text = String(decoding: plain, as: UTF8.self)
+
+        return DecryptedMessage(senderID: senderID, text: text, date: timestamp)
     }
 }
 
