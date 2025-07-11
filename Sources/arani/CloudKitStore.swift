@@ -227,7 +227,11 @@ public class CloudKitStore: CloudKitMessagingStore {
             CKRecord.Reference(recordID: conversation.id, action: .none)
         )
         let query = CKQuery(recordType: "Message", predicate: predicate)
+
         let (matches, _) = try await database.records(matching: query)
-        return try matches.values.map { try $0.get() }
+
+        return try matches.map { pair in
+            try pair.1.get()
+        }
     }
 }
