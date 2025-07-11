@@ -110,24 +110,67 @@ public class ChatClient {
         try await store.appendMessage(message, to: conversation)
     }
 
-    func handleIncoming(_ record: CKRecord) {
-        let ciphertext = record["ciphertext"] as! Data
-        let nonceData = record["nonce"] as! Data
-        let tagData = record["tag"] as! Data
+    /// Call this when you receive a new Message CKRecord (e.g. from a push).
+    /// - Parameters:
+    ///   - record:       The raw CKRecord of type "Message".
+    ///   - conversation: The conversation it belongs to (so we can get the thread key).
+    ///   - handler:      Your UI callback with a decrypted message.
+    func handleIncoming(
+        _ record: CKRecord,
+        in conversation: ConversationRecord,
+        handler: @escaping (DecryptedMessage) -> Void
+    ) {
+        Task {
+            do {
+                let ciphertext = record["ciphertext"] as! Data
+                let nonceData = record["nonce"] as! Data
+                let tagData = record["tag"] as! Data
+                let senderID = record["senderID"] as! String
+                let timestamp = record["timestamp"] as! Date
 
-        let myBlob = conversation.encryptedThreadKeys[currentUserID]!
-        let threadKeyData = yourAsymmetricDecrypt(myBlob)
-        let threadKey = SymmetricKey(data: threadKeyData)
+                let myRecordName = try await container.userRecordID().recordName
+                guard
+                    let myBlob = conversation.encryptedThreadKeys[myRecordName]
+                else {
+                    throw NSError(
+                        domain: "ChatClient",
+                        code: 1,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "No thread key for current user"
+                        ]
+                    )
+                }
 
-        let plainData = try crypto.decrypt(
-            ciphertext,
-            nonce: try AES.GCM.Nonce(data: nonceData),
-            tag: tagData,
-            using: threadKey
-        )
-        let text = String(decoding: plainData, as: UTF8.self)
+                let (myPrivKey, _) = try keyManager.identityKeyPair()
+                let threadKeyData = try AsymmetricCryptoKitAdapter()
+                    .decryptThreadKey(
+                        myBlob,
+                        initiatorPublicKeyData: conversation.initiatorPublicKey,
+                        myPrivateKey: myPrivKey
+                    )
+                let threadKey = SymmetricKey(data: threadKeyData)
 
-        //        handler(MessageRecord(..., decryptedText: text ...))
+                let nonce = try AES.GCM.Nonce(data: nonceData)
+                let plain = try crypto.decrypt(
+                    ciphertext,
+                    nonce: nonce,
+                    tag: tagData,
+                    using: threadKey
+                )
+                let text = String(decoding: plain, as: UTF8.self)
+
+                let msg = DecryptedMessage(
+                    senderID: senderID,
+                    text: text,
+                    date: timestamp
+                )
+                handler(msg)
+
+            } catch {
+                print("Failed to handle incoming message:", error)
+            }
+        }
     }
 
     public func messagesPublisher(for conversation: ConversationRecord) -> AsyncStream<DecryptedMessage> {

@@ -18,6 +18,7 @@ public struct MessageRecord: Identifiable {
     public let signature: Data?
 }
 
+@MainActor
 public protocol CloudKitMessagingStore {
     func createConversation(
         participants: [String],
@@ -34,6 +35,7 @@ public protocol CloudKitMessagingStore {
     ) async throws
 }
 
+@MainActor
 public class CloudKitStore: CloudKitMessagingStore {
     let container: CKContainer
     let database: CKDatabase
