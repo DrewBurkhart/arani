@@ -2,7 +2,7 @@ import CloudKit
 import CryptoKit
 import Foundation
 
-public struct DecryptedMessage {
+public struct DecryptedMessage: Sendable {
     public let senderID: String
     public let text: String
     public let date: Date
@@ -175,9 +175,80 @@ public class ChatClient {
         }
     }
 
-    public func messagesPublisher(for conversation: ConversationRecord) -> AsyncStream<DecryptedMessage> {
-        // TODO: subscribe and decrypt messages
-        return AsyncStream { _ in }
+    /// Convert a CKRecord into a MessageRecord.
+    // TODO: This should probably move into the store.
+    private func messageRecord(from ck: CKRecord) -> MessageRecord? {
+        guard
+            let parent = ck["parent"] as? CKRecord.Reference,
+            let ciphertext = ck["ciphertext"] as? Data,
+            let nonce = ck["nonce"] as? Data,
+            let tag = ck["tag"] as? Data,
+            let senderID = ck["senderID"] as? String,
+            let timestamp = ck["timestamp"] as? Date
+        else {
+            return nil
+        }
+        let signature = ck["signature"] as? Data
+        return MessageRecord(
+            id: ck.recordID,
+            parent: parent,
+            ciphertext: ciphertext,
+            nonce: nonce,
+            tag: tag,
+            senderID: senderID,
+            timestamp: timestamp,
+            signature: signature
+        )
+    }
+
+    public func messagesPublisher(
+        for conversation: ConversationRecord
+    ) -> AsyncStream<DecryptedMessage> {
+        AsyncStream<DecryptedMessage>(bufferingPolicy: .unbounded) {
+            continuation in
+            let store = self.store
+
+            Task {
+                do {
+                    let cks = try await store.fetchMessages(in: conversation)
+                    for ck in cks {
+                        if let msgRec = self.messageRecord(from: ck) {
+                            let dm = try await self.decrypt(
+                                msgRec,
+                                in: conversation
+                            )
+                            continuation.yield(dm)
+                        }
+                    }
+                } catch {
+                    continuation.finish()
+                }
+            }
+
+            let sub = store.subscribe(to: conversation) { msgRec in
+                Task {
+                    do {
+                        let dm = try await self.decrypt(
+                            msgRec,
+                            in: conversation
+                        )
+                        continuation.yield(dm)
+                    } catch {
+                        continuation.finish()
+                    }
+                }
+            }
+
+            continuation.onTermination = { @Sendable _ in
+                let id = sub.subscriptionID
+                Task { @MainActor in
+                    self.container
+                        .privateCloudDatabase
+                        .delete(withSubscriptionID: id) { _, _ in }
+                }
+            }
+        }
+    }
 
     /// Decrypt one MessageRecord into DecryptedMessage
     // TODO: This should probably move to a crypto module.
