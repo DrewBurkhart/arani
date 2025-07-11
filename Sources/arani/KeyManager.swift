@@ -1,6 +1,13 @@
-import Foundation
+import CloudKit
 import CryptoKit
+import Foundation
 import Security
+
+public enum KeyManagerError: Error {
+    case missingKeyPair
+    case cloudKitError(Error)
+    case unexpectedRecord
+}
 
 public enum KeychainError: Error {
     case unhandledError(status: OSStatus)
@@ -23,7 +30,7 @@ public class KeyManager {
             kSecClass: kSecClassGenericPassword,
             kSecAttrAccount: keyTag,
             kSecReturnData: true,
-            kSecMatchLimit: kSecMatchLimitOne
+            kSecMatchLimit: kSecMatchLimitOne,
         ]
 
         var item: AnyObject?
@@ -31,7 +38,9 @@ public class KeyManager {
 
         if status == errSecSuccess, let keyData = item as? Data {
             // Key data found, rehydrate the CryptoKit key
-            let privateKey = try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: keyData)
+            let privateKey = try Curve25519.KeyAgreement.PrivateKey(
+                rawRepresentation: keyData
+            )
             return (privateKey, privateKey.publicKey.rawRepresentation)
         }
 
@@ -43,7 +52,7 @@ public class KeyManager {
             var addQuery: [CFString: Any] = [
                 kSecClass: kSecClassGenericPassword,
                 kSecAttrAccount: keyTag,
-                kSecValueData: raw
+                kSecValueData: raw,
             ]
 
             let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
@@ -56,5 +65,36 @@ public class KeyManager {
 
         // Something else went wrong
         throw KeychainError.unhandledError(status: status)
+    }
+}
+
+extension KeyManager {
+    /// Publishes the current user’s public key into the public database
+    public func publishPublicKey() async throws {
+        let (privateKey, publicKeyData) = try identityKeyPair()
+
+        let container = CKContainer.default()
+        let meRecordID = try await container.userRecordID()
+
+        let publicDB = container.publicCloudDatabase
+        let profileRecord: CKRecord
+        do {
+            profileRecord = try await publicDB.record(
+                for: CKRecord.ID(recordName: meRecordID.recordName)
+            )
+        } catch {
+            profileRecord = CKRecord(
+                recordType: "UserProfile",
+                recordID: CKRecord.ID(recordName: meRecordID.recordName)
+            )
+        }
+
+        profileRecord["publicKey"] = publicKeyData as NSData
+
+        do {
+            _ = try await publicDB.save(profileRecord)
+        } catch {
+            throw KeyManagerError.cloudKitError(error)
+        }
     }
 }
