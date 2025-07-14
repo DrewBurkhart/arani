@@ -106,7 +106,7 @@ class ChatViewModel: ObservableObject {
     try await client.send(text, in: convo)
   }
 }
-
+```
 
 ### 6. Handle Remote Notifications
 
